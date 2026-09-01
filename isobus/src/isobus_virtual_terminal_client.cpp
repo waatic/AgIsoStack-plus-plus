@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstdio>
 #include <cstring>
 #include <functional>
 #include <limits>
@@ -1373,6 +1374,9 @@ namespace isobus
 						totalPoolSize += pool.objectPoolSize;
 					}
 
+					printf("[VT] Requesting %lu bytes from VT (%lu pools)\\r\\n",
+					       (unsigned long)totalPoolSize, (unsigned long)objectPools.size());
+
 					if (send_get_memory(totalPoolSize))
 					{
 						set_state(StateMachineState::WaitForGetMemoryResponse);
@@ -1592,6 +1596,7 @@ namespace isobus
 							{
 								if (!objectPools[i].uploaded)
 								{
+									printf("[VT] Starting pool %lu upload (%lu bytes)\\r\\n", (unsigned long)i, (unsigned long)objectPools[i].objectPoolSize);
 									bool transmitSuccessful = CANNetworkManager::CANNetwork.send_can_message(static_cast<std::uint32_t>(CANLibParameterGroupNumber::ECUtoVirtualTerminal),
 									                                                                         nullptr,
 									                                                                         objectPools[i].objectPoolSize + 1, // Account for Mux byte
@@ -1617,7 +1622,7 @@ namespace isobus
 								if (false == objectPools[i].uploaded)
 								{
 									objectPools[i].uploaded = true;
-									LOG_DEBUG("[VT]: Object pool %u uploaded.", i + 1);
+									printf("[VT] Pool %lu upload complete (%lu bytes)\r\n", (unsigned long)i, (unsigned long)objectPools[i].objectPoolSize);
 									currentObjectPoolState = CurrentObjectPoolUploadState::Uninitialized;
 								}
 							}
@@ -2783,11 +2788,12 @@ namespace isobus
 
 								if (0 == message.get_uint8_at(2))
 								{
-									// There IS enough memory
+									printf("[VT] GetMemory response: enough memory (VT version 0x%02X)\\r\\n", parentVT->connectedVTVersion);
 									parentVT->set_state(StateMachineState::SendGetNumberSoftkeys);
 								}
 								else
 								{
+									printf("[VT] GetMemory response: NOT ENOUGH memory!\\r\\n");
 									parentVT->set_state(StateMachineState::Failed);
 									LOG_ERROR("[VT]: Connection Failed Not Enough Memory");
 								}
@@ -3084,6 +3090,9 @@ namespace isobus
 								}
 								else
 								{
+									printf("[VT] EndOfPool: errorCodes=0x%02X objErr=0x%02X faultyObj=0x%04X parent=0x%04X\\r\\n",
+									       errorCodes, objectPoolErrorBitmask,
+									       objectIDOfFaultyObject, parentObjectIDOfFaultyObject);
 									parentVT->set_state(StateMachineState::Failed);
 									LOG_ERROR("[VT]: Error in end of object pool message." +
 									          std::string("Faulty Object ") +
