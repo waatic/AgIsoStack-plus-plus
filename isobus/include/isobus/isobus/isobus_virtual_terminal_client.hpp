@@ -421,6 +421,29 @@ namespace isobus
 		/// @returns true if connected, false otherwise
 		bool get_is_connected() const;
 
+		/// @brief Upload the object pools in two stages
+		/// @details On an upload (no stored version matches), the pools before `firstLatePool` are uploaded
+		/// and closed with End of Object Pool first, so the VT can show them (for example a small pool with
+		/// the Working Set and a loading mask). The client then reports connected, and right after that
+		/// uploads the pools from `firstLatePool` on, closes them with a second End of Object Pool and only
+		/// then stores the version (the whole set). Loading a stored version is unchanged.
+		/// The first pool must be valid on its own (Working Set and its active mask in it).
+		/// @param[in] firstLatePool Index of the first late pool, 0xFF for none (default: one stage)
+		void set_staged_pool_upload(std::uint8_t firstLatePool);
+
+		/// @brief True from the first End of Object Pool of a staged upload until the late pools are in use
+		/// @details While true, objects of the late pools do not exist on the VT yet: send no commands for them.
+		/// @returns true while the late pools are pending or uploading
+		bool get_is_staged_upload_pending() const;
+
+		/// @brief Change Numeric Value of a first-stage object while the late pools upload
+		/// @details For example a progress bar on the loading mask. Sent at once, not queued: false when
+		/// the late pools are not uploading or the VT has not answered the previous command yet.
+		/// @param[in] objectID An object of the first stage (it exists on the VT already)
+		/// @param[in] value The new value
+		/// @returns true if the command was sent
+		bool send_staged_upload_numeric_value(std::uint16_t objectID, std::uint32_t value);
+
 		/// @brief Returns the current state machine state
 		/// @returns The current internal state machine state
 		StateMachineState get_state() const;
@@ -1938,6 +1961,9 @@ namespace isobus
 
 		std::uint8_t consecutiveNonParsingVTStatusMessages = 0; ///< Consecutive VT status messages with parsing clear while awaiting an end of object pool or load version response, capped at three
 		bool objectPoolRejected = false; ///< The VT rejected the pool in its End of Object Pool response, so it is not sent again until the VT goes away or the client restarts
+		std::uint8_t firstLatePool = 0xFF; ///< Staged upload: index of the first pool uploaded after the first End of Object Pool (0xFF: one stage)
+		bool lateUploadPending = false; ///< Staged upload: the first stage is in use, the late pools are still to upload
+		bool uploadingLatePools = false; ///< Staged upload: the late pools are uploading (second stage)
 
 		std::uint8_t connectedVTVersion = 0; ///< The VT server's supported max version
 

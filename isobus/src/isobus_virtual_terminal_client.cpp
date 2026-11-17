@@ -146,6 +146,16 @@ namespace isobus
 		return (StateMachineState::Connected == state);
 	}
 
+	void VirtualTerminalClient::set_staged_pool_upload(std::uint8_t firstLate)
+	{
+		firstLatePool = firstLate;
+	}
+
+	bool VirtualTerminalClient::get_is_staged_upload_pending() const
+	{
+		return lateUploadPending || uploadingLatePools;
+	}
+
 	VirtualTerminalClient::StateMachineState VirtualTerminalClient::get_state() const
 	{
 		return state;
@@ -1788,6 +1798,10 @@ namespace isobus
 
 					for (std::uint32_t i = 0; i < objectPools.size(); i++)
 					{
+						if ((!uploadingLatePools) && (i >= firstLatePool))
+						{
+							continue; // Staged upload: late pools go after the first End of Object Pool
+						}
 						if (((nullptr != objectPools[i].objectPoolDataPointer) ||
 						     (nullptr != objectPools[i].dataCallback)) &&
 						    (objectPools[i].objectPoolSize > 0))
@@ -1873,6 +1887,14 @@ namespace isobus
 					{
 						set_state(StateMachineState::Disconnected);
 						LOG_ERROR("[VT]: Status Timeout");
+						break;
+					}
+					if (lateUploadPending)
+					{
+						// Staged upload: the first stage shows on the VT, now the late pools
+						lateUploadPending = false;
+						uploadingLatePools = true;
+						set_state(StateMachineState::UploadObjectPool);
 						break;
 					}
 					update_auxiliary_input_status();
@@ -2675,6 +2697,8 @@ namespace isobus
 			{
 				pool.uploaded = false;
 			}
+			lateUploadPending = false;
+			uploadingLatePools = false;
 		}
 	}
 
@@ -3734,14 +3758,35 @@ namespace isobus
 										objectPool.scaledObjectPool.clear();
 									}
 
-									// Check if we need to store this pool
-									if (!parentVT->objectPools[0].versionLabel.empty())
+									// Staged upload: the first stage is in use, the late pools follow (stored after them)
+									bool latePoolsLeft = false;
+									if (!parentVT->uploadingLatePools)
 									{
+										for (std::size_t i = parentVT->firstLatePool; i < parentVT->objectPools.size(); i++)
+										{
+											if (!parentVT->objectPools[i].uploaded)
+											{
+												latePoolsLeft = true;
+											}
+										}
+									}
+
+									if (latePoolsLeft)
+									{
+										LOG_INFO("[VT]: First upload stage in use, uploading the remaining pools.");
+										parentVT->lateUploadPending = true;
+										parentVT->set_state(StateMachineState::Connected);
+									}
+									// Check if we need to store this pool
+									else if (!parentVT->objectPools[0].versionLabel.empty())
+									{
+										parentVT->uploadingLatePools = false;
 										parentVT->set_state(StateMachineState::SendStoreVersion);
 									}
 									else
 									{
 										// No version to store, check for auxiliary assignments.
+										parentVT->uploadingLatePools = false;
 										parentVT->set_state(StateMachineState::Connected);
 									}
 								}
@@ -5770,6 +5815,35 @@ namespace isobus
 
 		bool success = send_message_to_vt(data.data(), data.size());
 
+		if (success)
+		{
+			commandAwaitingResponse = true;
+			lastCommandTimestamp_ms = SystemTiming::get_timestamp_ms();
+		}
+		return success;
+	}
+
+	bool VirtualTerminalClient::send_staged_upload_numeric_value(std::uint16_t objectID, std::uint32_t value)
+	{
+		if (!uploadingLatePools)
+		{
+			return false;
+		}
+		if (commandAwaitingResponse && !SystemTiming::time_expired_ms(lastCommandTimestamp_ms, 1500))
+		{
+			return false; // the VT still owes the response to the last one
+		}
+		const std::uint8_t buffer[] = {
+			static_cast<std::uint8_t>(Function::ChangeNumericValueCommand),
+			static_cast<std::uint8_t>(objectID & 0xFF),
+			static_cast<std::uint8_t>(objectID >> 8),
+			0xFF,
+			static_cast<std::uint8_t>(value & 0xFF),
+			static_cast<std::uint8_t>((value >> 8) & 0xFF),
+			static_cast<std::uint8_t>((value >> 16) & 0xFF),
+			static_cast<std::uint8_t>((value >> 24) & 0xFF),
+		};
+		const bool success = send_message_to_vt(buffer, sizeof(buffer));
 		if (success)
 		{
 			commandAwaitingResponse = true;
