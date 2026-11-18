@@ -3398,8 +3398,10 @@ namespace isobus
 								const std::uint16_t inputObjectID = message.get_uint16_at(1);
 								const std::uint16_t value1 = message.get_uint16_at(3);
 								const std::uint16_t value2 = message.get_uint16_at(5);
+								const std::uint8_t operatingState = message.get_uint8_at(7);
 								const std::uint64_t sourceName = message.get_source_control_function()->get_NAME().get_full_name();
 								std::vector<AuxiliaryFunctionEvent> events;
+								if (0 == (operatingState & AuxiliaryInputLearnModeActive))
 								{
 									LOCK_GUARD(Mutex, auxiliaryMutex);
 									auto device = std::find_if(parentVT->assignedAuxiliaryInputDevices.begin(), parentVT->assignedAuxiliaryInputDevices.end(), [sourceName](const AssignedAuxiliaryInputDevice &candidate) {
@@ -3411,7 +3413,7 @@ namespace isobus
 										{
 											if (assignment.inputObjectID == inputObjectID)
 											{
-												events.push_back({ assignment, parentVT, value1, value2 });
+												events.push_back({ assignment, parentVT, value1, value2, operatingState });
 											}
 										}
 									}

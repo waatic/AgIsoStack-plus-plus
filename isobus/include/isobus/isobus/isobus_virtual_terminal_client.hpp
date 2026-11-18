@@ -559,13 +559,25 @@ namespace isobus
 			bool isTerminated; ///< Whether the audio signal is terminated
 		};
 
+		/// @brief Bits of the operating state byte of an Auxiliary Input Type 2 Status message (ISO 11783-6, Annex J)
+		enum AuxiliaryInputOperatingState : std::uint8_t
+		{
+			AuxiliaryInputLearnModeActive = 0x01, ///< The input is in learn mode (status messages are not dispatched to Functions)
+			AuxiliaryInputActivatedInLearnMode = 0x02, ///< The input was activated while in learn mode
+			AuxiliaryInputControlLocked = 0x04, ///< The input is locked (VT version 6 and later)
+			AuxiliaryInputActivatedWhileLocked = 0x08 ///< The input was activated while locked (VT version 6 and later)
+		};
+
 		/// @brief A struct for storing information of an auxilary function event
+		/// @details Status messages from an input in learn mode are not dispatched. A locked input is dispatched with
+		/// AuxiliaryInputControlLocked set in operatingState, so the application decides how to react.
 		struct AuxiliaryFunctionEvent
 		{
 			AssignedAuxiliaryFunction function; ///< The function
 			VirtualTerminalClient *parentPointer; ///< A pointer to the parent VT client
 			std::uint16_t value1; ///< The first value
 			std::uint16_t value2; ///< The second value
+			std::uint8_t operatingState; ///< The input's operating state byte, see AuxiliaryInputOperatingState
 		};
 
 		/// @brief Flags describing why a preferred auxiliary assignment failed

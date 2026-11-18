@@ -296,9 +296,9 @@ static void auxiliary_assignment(DerivedTestVTClient &client, const std::shared_
 	receive_auxiliary(client, vt, bytes);
 }
 
-static void auxiliary_status(DerivedTestVTClient &client, const std::shared_ptr<ControlFunction> &source, std::uint16_t input)
+static void auxiliary_status(DerivedTestVTClient &client, const std::shared_ptr<ControlFunction> &source, std::uint16_t input, std::uint8_t operatingState = 0)
 {
-	receive_auxiliary(client, source, { 0x26, static_cast<std::uint8_t>(input), static_cast<std::uint8_t>(input >> 8), 0x56, 0, 0x78, 0, 0 });
+	receive_auxiliary(client, source, { 0x26, static_cast<std::uint8_t>(input), static_cast<std::uint8_t>(input >> 8), 0x56, 0, 0x78, 0, operatingState });
 }
 
 static void auxiliary_response(DerivedTestVTClient &client, const std::shared_ptr<ControlFunction> &vt, std::uint8_t error = 0)
@@ -1073,6 +1073,33 @@ TEST_F(VirtualTerminalTest, AuxiliaryStatusUsesSourceNameAndDispatchesEveryMatch
 	events.clear();
 	auxiliary_status(client, b, 0x1234);
 	EXPECT_EQ((std::vector<std::uint16_t>{ 0x0201 }), events);
+}
+
+TEST_F(VirtualTerminalTest, AuxiliaryStatusInLearnModeIsIgnoredAndOperatingStateIsReported)
+{
+	AuxiliaryTestCAN can(time_source);
+	DerivedTestVTClient client(can.partner, can.ecu);
+	client.set_auxiliary_functions_enabled(true);
+	client.test_wrapper_set_vt_version(6);
+	const auto device = auxiliary_device(401, 0x21);
+	auxiliary_maintenance(client, device, 0x3344);
+	auxiliary_assignment(client, can.partner, 401, 0x0101, 0x1234);
+
+	std::vector<std::uint8_t> states;
+	client.get_auxiliary_function_event_dispatcher().add_listener([&](const auto &event) {
+		EXPECT_EQ(0x0101, event.function.functionObjectID);
+		states.push_back(event.operatingState);
+	});
+
+	// Learn mode, with or without activation: the input is being assigned, not operated.
+	auxiliary_status(client, device, 0x1234, VirtualTerminalClient::AuxiliaryInputLearnModeActive);
+	auxiliary_status(client, device, 0x1234, VirtualTerminalClient::AuxiliaryInputLearnModeActive | VirtualTerminalClient::AuxiliaryInputActivatedInLearnMode);
+	EXPECT_TRUE(states.empty());
+
+	// Normal and locked inputs are dispatched with their operating state.
+	auxiliary_status(client, device, 0x1234);
+	auxiliary_status(client, device, 0x1234, VirtualTerminalClient::AuxiliaryInputControlLocked | VirtualTerminalClient::AuxiliaryInputActivatedWhileLocked);
+	EXPECT_EQ((std::vector<std::uint8_t>{ 0x00, 0x0C }), states);
 }
 
 TEST_F(VirtualTerminalTest, LostInputExpiresActiveAssignmentButPreservesItsPreference)

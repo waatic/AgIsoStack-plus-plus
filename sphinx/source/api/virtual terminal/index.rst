@@ -53,6 +53,9 @@ The application must supply a correct object pool and valid function and input O
 The client does not inspect the pool for AUX-N capabilities. Configure the model identification
 code and any persistence callbacks before initialization. Preferred Assignment synchronization
 runs independently of normal VT initialization and does not delay the Connected state.
+Function events carry the input's operating state byte. Status messages from an input in learn mode
+are not dispatched; a locked input (VT version 6) is dispatched with ``AuxiliaryInputControlLocked``
+set, and the application decides how to react.
 Inputs report Initializing until the VT confirms pool loading, then Ready. Assignment failure
 is reported through the auxiliary assignment failure event dispatcher and does not disconnect the VT.
 Ready devices load preferred assignments during ``update()``. If a preferred assignment command
